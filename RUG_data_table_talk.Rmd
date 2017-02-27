@@ -1,0 +1,692 @@
+---
+title: "Data ...(don't wait for it)... .table!"
+author: 'Carlos Bort & Jordi Puigdellivol'
+date: '`r Sys.Date()`'
+output:
+  slidy_presentation:
+    duration: 120
+    font_adjustment: 0
+    footer: Have fun!
+    html_document:
+      md_extensions: -autolink_bare_uris+hard_line_breaks
+  ioslides_presentation: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+data("diamonds",package = "ggplot2")
+library(data.table)
+```
+
+
+# Outline 
+
+(1) Introduction to data.table package
+
+    - What this talk it is / and it is not about
+    - Motivation
+
+(2) Basics data.table. 
+
+    - The **i,j,by** syntax. + Exercice
+  
+(3) Intermediate data.table. 
+
+    - .SD, multiple assign, setkey, setnames, %between%, .GRP, .BY, + Exercice.
+  
+(4) Advanced data.table and further steps 
+
+    - Shift, set, .EACHI, margarittr,  merge, pattern: like, + Exercice. 
+    - Others. fread(), melt(), dcast(), IDateTime(), fwrite() 
+    
+
+## Objective
+
+- Data.table novice: Understand the package logic and its posibilities.
+
+- Data.table pr0s: Some useful tips.
+
+
+
+# What this talk it is about
+
+- Understand how to use data.table
+
+- Create a practical guide to use it
+
+- Improve your daily work
+
+<img src="https://media.giphy.com/media/Ma9C5ZLpqmJWM/giphy.gif">
+
+
+# What this talk it is NOT about
+
+- Getting deep on the object class data.table
+
+- Benchmark session
+
+- The eternal dplyr vs data.table debate
+
+<img src="https://media.giphy.com/media/mpZnI11wu4wx2/giphy.gif">
+
+
+
+# Data.table to the rescue! 
+
+Basic R programming code it is a bit verbose... (A BIT), right? And sometimes you have to wait for it....
+
+<img src="https://images.gr-assets.com/hostedimages/1414430957ra/11653464.gif" align="middle" height="420" width="620">
+
+Creating columns, filtering, grouping by... That's why...
+
+- Matt Dowle & Arun Srinivasan created the package: ``data.table()``
+
+https://github.com/Rdatatable/data.table
+
+Step 1, install the package: 
+
+```{r,eval=TRUE,warning=F}
+#install.packages("data.table")
+library(data.table)
+```
+
+    What is a data.table?
+
+- It is a mutable object, a improved version of a data.frame. 
+
+    - When you create a new column or change in the data.frame, you do not have to re-write enterely in memory! 
+    - Most of the functions are written in C
+
+What does this package so exceptional?
+
+- [Calculus speed](https://github.com/Rdatatable/data.table/wiki/Benchmarks-:-Grouping) 
+- [Cheat sheet](https://s3.amazonaws.com/assets.datacamp.com/img/blog/data+table+cheat+sheet.pdf) 
+- [Datacamp Course](https://www.datacamp.com/courses/data-table-data-manipulation-r-tutorial)    
+
+
+How I transform a data.frame into a data.table?
+
+```{r}
+data("diamonds",package = "ggplot2")
+```
+
+### setDT()
+
+- Modifies the object by reference. It does not copy the object in memory. 
+
+
+```{r}
+class(diamonds)
+setDT(diamonds)
+class(diamonds)
+```
+
+Better than...
+
+```{r,eval=FALSE}
+diamonds<-as.data.frame(diamonds)
+```
+
+- Data.table is a data.frame too! 
+
+- The examples will be done with `diamonds` dataset.
+
+- Exercices with flights dataset
+
+```{r}
+data("flights",package = "nycflights13" )
+```
+
+
+# Basics of data.table the i,j,by syntax
+
+Sintaxis:
+
+As you saw in the course, understanding data.table is like understanding SQL. 
+
+- DT[**i**, **j**, **by**].
+
+- SQL[**where**, **select**, **group_by**].
+
+
+Idea: Three posible separations and two comas:
+
+
+### First separation, **i**, (where):
+
+Subset the elements **i**, by its row number or condition:
+
+```{r}
+# Select the first three columns
+diamonds[1:3]
+```
+
+- Filter `cut=="ideal"`, diamonds:
+
+```{r}
+# All cuts are Ideal :)
+diamonds[cut=="Ideal"][1:2]
+```
+
+### Extract column as a vector
+
+```{r}
+# By name
+diamonds[["cut"]][1:10]
+# By number
+diamonds[,1][1:10]
+# For multiple columns
+diamonds[,1:2][1:10]
+```
+
+### Second separation, **j**, (select):
+
+For all the observations selected on **i** calculate:
+
+```{r}
+diamonds[,sum(depth)]
+```
+
+- DT[**all the elements**, **do**].
+
+
+### Third separation, **by**, (group by): 
+
+For all the selected on **i** do the calculus **j**, **by** these different groups:
+
+```{r}
+diamonds[,mean(carat),by=cut]
+
+# Only for a subset
+diamonds[color %in% c("E","H"),mean(carat),by=cut]
+```
+
+### .N 
+
+Counts the number of elements per item. Couting it's a calculus, **j** separator.
+
+```{r}
+diamonds[,.N,by=cut]
+```
+
+### :=,  Creating a colum by reference
+
+To create a column you do not have to rewrite your object, it is add by reference. LHS, RHS.
+
+```{r}
+# Creating a carat * depth column. One at a time
+diamonds[,carat_depth:=carat*depth]
+
+# Or more than one column
+diamonds[,`:=`(carat_depth = carat*depth,carat_depth_2 = carat*depth, carat_depth_3 = carat*depth )]
+
+# Or more than one column
+diamonds[,`:=`(carat_depth = carat*depth,carat_depth_2 = carat*depth, carat_depth_3 = carat*depth )]
+```
+
+### Subset and rewrite!
+
+```{r}
+diamonds[cut=="Fair",carat_depth:=0]
+diamonds[cut=="Fair",sum(carat_depth)]
+```
+
+### := NULL, deleting columns
+
+Remove inmediatly without taking into account the size of data.table.
+
+```{r}
+# Delete one
+diamonds[,carat_depth_3:=NULL]
+
+# More than one
+my_columns<-c("carat_depth","carat_depth_2")
+diamonds[,(my_columns):=NULL]
+
+```
+
+
+### Multiple aggregations, multiple **j**, by multiple **by**
+
+You can creat multiple agregations with `list(newcolumn_1=sum(x),newcolumn_2=sd(x),...)`
+
+```{r}
+# You can change list() for . in the next example ;)
+diamonds[, list(mean_carat=mean(carat),sd_carat=sd(carat)), by=list(cut,color)][1:10]
+```
+
+### The Chaining 
+
+You can combine different data.table instruction by chaining theme with the square brackets. 
+
+```{r}
+diamonds[, .(mean_carat=mean(carat),sd_carat=sd(carat)), by=.(cut,color)][order(-cut)][1:10]
+```
+
+### setcolorder()
+
+Change columns order by reference.
+
+```{r}
+colnames(diamonds)
+# Reverse the column names by reference
+setcolorder(diamonds,rev(colnames(diamonds)))
+colnames(diamonds)
+```
+
+### Let's do some exercices!
+
+<img src="https://media1.popsugar-assets.com/files/thumbor/j1x_psQOVzJLtCyFbYigvK0GwOY/fit-in/1024x1024/filters:format_auto-!!-:strip_icc-!!-/2014/03/24/844/n/1922283/9aa699fdc0e093f1_selffive/i/Especially-self-five.gif">
+
+
+
+
+# Data.table/Basic_Exercice
+
+
+```{r}
+data("flights",package = "nycflights13" )
+```
+
+Flight columns:
+
+- **year,month,day** Date of departure.
+
+- **dep_time,arr_time** Actual departure and arrival times, local tz.
+
+- **sched_dep_time,sched_arr_time** Scheduled departure and arrival times, local tz.
+
+- **dep_delay,arr_delay** Departure and arrival delays, in minutes. Negative times represent early departures/arrivals.
+
+- **hour,minute** Time of scheduled departure broken into hour and minutes. carrier Two letter carrier abbreviation. See airlines to get name tailnum Plane tail number flight Flight number.
+
+- **origin,dest** Origin and destination. See airports for additional metadata.
+
+- **air_time** Amount of time spent in the air, in minutes.
+
+- **distance** Distance between airports, in miles.
+
+- **time_hour** Scheduled date and hour of the flight as a POSIXct date. Along with origin, can be used to join flights data to weather data.
+
+## Exercice
+
+1.- Transform `flights` into a data.table (setDT())
+
+```{r,echo=FALSE}
+class(flights)
+setDT(flights)
+class(flights)
+```
+
+2.- How many where destinated to Miami?
+
+```{r,echo=FALSE}
+flights[dest=="MIA",.N]
+```
+
+3.- Calculate the total days of `air_time` (has NA's). (pssst: lubridate:::seconds_to_period() )
+
+```{r,echo=F,warning=F,message=F}
+flights[,sum(air_time,na.rm=T)/(60*24)]
+
+lubridate:::seconds_to_period(flights[,sum(air_time,na.rm=T)]*60)
+```
+
+4.- Mean difference by origin airport.
+
+```{r,echo=F,warning=F,message=F}
+flights[,mean(dep_delay,na.rm=T),by=origin]
+```
+
+5.- Create a new data.table `delays_month` with mean, sd, and number of flights per month. (Same column names!) 
+
+```{r,echo=F}
+delays_month<-flights[,.(mean_delay=mean(dep_delay,na.rm=T),sd_delay=sd(dep_delay,na.rm=T),n_flights=.N) ,by=month]
+delays_month
+```
+
+6.- Create a new binary column named `not_delayed` when dep_delay <0 , equals 1. (psssst: ifelse()). 
+
+```{r,echo=F}
+flights[,not_delayed:=ifelse(dep_delay<0,1,0)]
+```
+
+7.- Calculate the mean of not delayed flights by company. Use the `not_delayed` column and name it as `perc_not_delayed`! Use the chaining to order by `perc_not_delayed`. (Add .N column)
+
+```{r,echo=F}
+flights[,.(perc_not_delayed=mean(not_delayed,na.rm=T),.N),by=carrier][order(-perc_not_delayed)]
+```
+
+8.- Load the airlines dataset. With one line of code, filter the airlines dataset with the previous 10 best airlines. (ppssst: airlines[column %in% super_chunk_of_code])
+
+```{r}
+data("airlines",package = "nycflights13" )
+setDT(airlines)
+```
+
+```{r,echo=FALSE}
+airlines[carrier%in% flights[,.(perc_not_delayed=mean(not_delayed,na.rm=T),.N),by=carrier][order(-perc_not_delayed)][1:10][["carrier"]]]
+```
+
+
+[Honolulu-R-Users-Group](https://www.meetup.com/es-ES/Honolulu-R-Users-Group/)  :_)
+
+## For the bRave
+
+9.- Use the previous `delays_month` data.table and plot the mean delays with the sd delays. Try to use `ggplot2` and `ggrepel` (for the labels). (+ info, google)
+
+- https://cran.r-project.org/web/packages/ggrepel/vignettes/ggrepel.html (Amazing)
+
+```{r,echo=FALSE,message=F,warning=FALSE}
+library(ggplot2)
+library(ggrepel)
+ggplot(delays_month,aes(x=mean_delay,y=sd_delay)) +  geom_point(aes(mean_delay, sd_delay), color = 'red') + geom_text_repel(aes(x=mean_delay,y=sd_delay,label = month)) +   theme_classic(base_size = 16) + geom_smooth(method="lm")
+```
+
+### Linear fit! 
+
+<img src="https://media.giphy.com/media/PgwAgf7fbMrsY/giphy.gif" height="320" width="460">
+
+
+
+10.- Replicate this plot.
+
+```{r,echo=FALSE,message=F,warning=FALSE}
+library(ggplot2)
+library(ggrepel)
+
+delay_carrier<-flights[,.(mean_delay=mean(dep_delay,na.rm=T)),by=.(month,carrier)]
+delay_carrier
+
+ggplot(delay_carrier, aes(month, mean_delay, color = carrier)) +geom_line() + geom_point() + 
+  theme_classic(base_size = 16) + scale_x_continuous(breaks=seq(1, 12, 1)) +  
+  theme(legend.position = "none") + geom_text_repel(
+    data = delay_carrier[month==12],
+    aes(label = paste(carrier)),
+    size = 4
+    #nudge_x = 45,
+    #segment.color = NA
+  )
+```
+
+Inspired by: https://cran.r-project.org/web/packages/ggrepel/vignettes/ggrepel.html
+
+
+# Intermediate
+
+
+### ':='
+
+Fast add, remove and update subsets of columns, by reference. := operator can be used in two ways:
+  LHS := RHS form, and Functional form.
+
+
+```{r}
+
+diamonds[ , `:=` ( avg_price = round( mean( price ), 2), avg_carat = round( mean( carat ), 2) ) , by = cut ]
+
+vars = c( "price" , "carat" )
+new_vars=paste0("avg_",vars)
+diamonds[ , c( new_vars, "clarity" ) := list( round( avg_price, 2), round( avg_carat, 2 ) , as.character(clarity) ) ]
+```
+
+### setkey
+
+In data.table parlance, all set* functions change their input by reference. That is, no copy is made at all, other than temporary working memory, which is as large as one column.. The only other data.table operator that modifies input by reference is :=.
+
+setkey() sorts a data.table and marks it as sorted (with an attribute sorted). The sorted columns are the key. The key can be any columns in any order. The columns are sorted in ascending order always.
+
+```{r}
+setkey(diamonds,carat)
+setkeyv( diamonds, c( "carat", "cut" ) )
+```
+
+### setnames
+
+```{r}
+setnames( diamonds, c("avg_price","avg_carat" ),c("mean_price","mean_carat" ) )
+```
+
+### %between%
+
+Intended for use in i in [.data.table. 
+
+  - between is equivalent to x >= lower & x <= upper when incbounds=TRUE, or x > lower & y < upper when FALSE.
+  - inrange checks whether each value in x is in between any of the intervals provided in lower,upper
+
+
+```{r}
+diamonds[price %between% c(300,500),.(carat,price,cut)]
+range = data.table(lower = c(2000,3000), upper = c(2500,3500))
+diamonds[price %inrange% range, .(carat,price,cut)]
+```
+
+## Special-symblos
+
+.SD, .BY, .N, .I and .GRP are read only symbols for use in j. .N can be used in i as well
+
+### .SD
+
+.SD is a data.table containing the Subset of x’s Data for each group, excluding any columns
+used in by (or keyby).
+
+```{r}
+diamonds[,lapply(.SD,floor),.SDcols=c("x","y","z")]
+
+newest_vars=paste0("new_mean_",vars)
+diamonds[ , c(newest_vars) := lapply( .SD, function(x){ round( mean( x ) ,2 ) }) , by = cut,.SDcols=vars ]
+```
+
+### .BY
+
+.BY is a list containing a length 1 vector for each item in by. This can be useful when by is
+not known in advance. The by variables are also available to j directly by name; useful for
+example for titles of graphs if j is a plot command, or to branch with if() depending on the
+value of a group variable.
+
+```{r}
+par(mfrow=c(2,4))
+invisible( diamonds[,.(hist(price)),by=clarity] )
+invisible( diamonds[,.(hist(price,main=paste(.BY))),by=clarity] )
+par(mfrow=c(1,1))
+```
+
+
+### .GRP
+
+.GRP is an integer, length 1, containing a simple group counter. 1 for the 1st group, 2 for the
+2nd, etc.
+
+```{r}
+diamonds[,.GRP,by=clarity]
+```
+
+# Data.table/Intermediate_Exercice
+
+1.- Cast all the character filds  `tolower()`. ( Of course in one line ;)
+
+```{r}
+vars = c("carrier","tailnum","origin","dest")
+```
+```{r,echo=F}
+flights[,c(vars):=lapply(.SD,tolower),.SDcols=vars]
+```
+
+2.- Can you plot `arr_delay` vs `dep_delay` for each `carrier` wich has more than 25000 fligths in the same plot, in one line and... without using ggplot2? (muahahahahahaha)
+
+```{r}
+par(mfrow=c(2,3))
+```
+```{r echo=F}
+flights[,N:=.N,by=carrier][N>25000,plot(x=arr_delay,y=dep_delay,main=paste(.BY),pch=20),by=carrier]
+```
+```{r}
+par(mfrow=c(1,1))
+
+```
+
+
+# Advanced
+
+### shift
+
+Lead or lag vectors, lists, data.frames or data.tables implemented in C for speed.
+
+```{r}
+today=as.character(Sys.Date())
+diamonds[,fake_data:= sample(seq(as.Date(today)-.N,as.Date(today),by="day"),.N)]
+setkey(diamonds,"fake_data")
+diamonds[, last_price := shift( price, n = 1 , type = "lag" ) ]
+diamonds[, next_price := shift( price, n = 1 , type = "lead" ), by = cut ]
+```
+
+### %like%
+
+Intended for use in i in [.data.table.
+
+```{r}
+diamonds[cut %like% "Good$" ]
+```
+
+### Merge
+
+Fast merge of two data.tables. The data.table method behaves very similarly to that of data.frames except that, by default, it attempts to merge
+
+    - at first based on the shared key columns, and if there are none,
+    - then based on key columns of the first argument x, and if there are none,
+    - then based on the common columns between the two data.tables.
+    
+**AQUI EL on:= podries posarlo?**    
+
+```{r}
+X = data.table(x = c("a","a","a","a","b","b","c","d"), some_staf = 1:8, key = "x")
+Y = data.table(x = c("a","c","z"), z = c(100,500,1000), key = "x")
+X[Y]
+Y[X]
+merge(X,Y,all=T)
+merge(X,Y,all=F)
+```
+
+
+## Other functions
+
+### fread()
+
+**THE BEST FUNCTION FOR LOADING .CSV FILES**
+
+### fwrite()
+
+Write something **ACABAR**
+
+
+### melt & dcast
+
+Data.table has optimized function for melting and casting a data.table.
+
+### IDate & ITime
+
+IDateTime
+
+```{r}
+system.time(IDateTime(flights[["time_hour"]]))
+nrow(flights)
+#CRY
+```
+
+
+### magrittr
+
+Pipe operators for data.table
+
+```{r,warning=FALSE}
+library(magrittr)
+diamonds %>% setDT() %>% 
+  .[, .(mean_carat=mean(carat),sd_carat=sd(carat)), by=.(cut,color)] %>%
+  .[order(mean_carat)] %>% 
+  .[1:3]
+```
+
+## PIPES outside the hadleyverse! 
+
+<img src="https://media.giphy.com/media/6b5A4jaELS4jm/giphy.gif" align="middle" height="520" width="420">
+
+
+
+
+https://cran.r-project.org/web/packages/magrittr/vignettes/magrittr.html
+
+# Data.table/Advanced_Exercice
+
+
+1.- `magrittr` way! Calculate the mean of not delayed flights by company. Use the `not_delayed` column and name it as `perc_not_delayed`! Use the chaining to order by `perc_not_delayed`. (Add .N column)
+
+```{r,echo=F}
+flights %>% setDT() %>% 
+  .[,.(perc_not_delayed=mean(not_delayed,na.rm=T),.N),by=carrier] %>%
+  .[order(-perc_not_delayed)]
+```
+
+<!-- 2.- Use `shift` function to create a delay for the column `time_hour` per day. Column name, `time_goes_by`. -->
+
+2.-for each fligth can you tell wich was the last carrier that did the same travel?
+
+```{r}
+require(lubridate)
+flights[,dep_time_stamp:=ymd_hm(paste(year,month,day,hour,minute))]
+```
+
+```{r,echo=F}
+setkey(flights,dep_time_stamp)
+flights[,last_carrier:=shift(carrier,type = "lag"),by=.(origin,dest)][,.(dep_time_stamp,origin,dest,carrier,last_carrier)][order(origin,dest)]
+```
+
+3.- Merge `flights` with `airlines`. The data.table way! `setkey` and merge!
+
+```{r}
+data("airlines",package = "nycflights13" )
+setDT(airlines)
+```
+
+```{r,echo=F}
+setkey(flights, carrier)
+setkey(airlines, carrier)
+flights[airlines][1:3]
+```
+
+4.- Use the function `IDateTime` to create simultaniously two columns. First, create a vector with the two column names. Second `DT[,():=IDateTime(...)]` notation.
+
+```{r,echo=F}
+vars=c("day_flight","time_flight")
+flights[,(vars):=IDateTime(time_hour)]
+```
+
+
+# Last words! 
+
+- 
+
+<img src="https://media.giphy.com/media/Ji3jAH1MzwROw/giphy.gif" height="420" width="420">
+
+
+
+
+
+# Thanks! 
+
+<img src="http://big.assets.huffingtonpost.com/10_Momn_12.gif">
+
+<br>
+
+Availables for further questions! 
+
+Jordi Puigdellívol: [jpuigde@gmail.com](jpuigde@gmail.com), [https://es.linkedin.com/in/jordi-puigdellivol-654b5265](https://es.linkedin.com/in/jordi-puigdellivol-654b5265)
+
+<br>
+
+Carlos Bort: [carlosebort@gmail.com](carlosebort@gmail.com), [https://www.linkedin.com/in/carlosbort](https://www.linkedin.com/in/carlosbort)
+
+
+
+
+
+
